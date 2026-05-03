@@ -112,21 +112,6 @@ body {
     margin-bottom: 2px;
 }
 
-.audio-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #4285f4;
-    padding: 6px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    transition: background 0.15s;
-}
-
-.audio-btn:hover { background: #e8f0fe; }
-
 .word-title {
     font-size: 30px;
     font-weight: 400;
@@ -195,11 +180,75 @@ body {
     margin-bottom: 10px;
 }
 
-/* Etymology */
+/* Etymology – plain text fallback */
 .etymology-text {
     font-size: 14px;
     color: #202124;
     line-height: 1.6;
+}
+
+/* Etymology tree */
+.etym-tree {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 0 4px;
+}
+
+.etym-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.etym-lang {
+    background: #e8f0fe;
+    color: #1558d6;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 4px 14px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    display: inline-block;
+}
+
+.etym-word {
+    font-size: 13px;
+    color: #5f6368;
+    margin-top: 4px;
+}
+
+.etym-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+}
+
+.etym-arrow::before {
+    content: '';
+    width: 1px;
+    height: 14px;
+    background: #bdc1c6;
+    display: block;
+}
+
+.etym-arrow::after {
+    content: '';
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #bdc1c6;
+    display: block;
+}
+
+.etym-final {
+    font-size: 14px;
+    color: #202124;
+    margin-top: 6px;
 }
 
 /* Synonyms */

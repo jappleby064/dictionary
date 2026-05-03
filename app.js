@@ -36,7 +36,6 @@ async function search() {
         return;
     }
 
-    // Fallback to Wikipedia
     const wikiData = await fetchWikipedia(word);
     if (wikiData) {
         renderWiki(wikiData, etymology, synonyms);
@@ -72,6 +71,8 @@ async function fetchWikipedia(word) {
     }
 }
 
+// Returns { nodes: [{lang, word}], raw: string } or null.
+// nodes are ordered oldest → newest (reversed from Wiktionary order).
 async function fetchEtymology(word) {
     try {
         const res = await fetch(
@@ -84,8 +85,8 @@ async function fetchEtymology(word) {
         const heading = doc.querySelector('[id^="Etymology"]');
         if (!heading) return null;
 
-        // Wiktionary wraps headings in <div class="mw-heading">; walk up to that
-        // so nextElementSibling reaches the <p> at the same level.
+        // Wiktionary wraps headings in <div class="mw-heading">; step up to that
+        // so nextElementSibling reaches the <p> at the same document level.
         const el = heading.closest('.mw-heading') || heading.closest('h2,h3,h4');
         if (!el) return null;
 
@@ -93,7 +94,7 @@ async function fetchEtymology(word) {
         while (next) {
             if (next.classList.contains('mw-heading') || /^H[2-4]$/.test(next.tagName)) break;
             if (next.tagName === 'P' && next.textContent.trim().length > 10) {
-                return next.textContent.trim().replace(/\[\d+\]/g, '');
+                return parseEtymParagraph(next);
             }
             next = next.nextElementSibling;
         }
@@ -101,6 +102,32 @@ async function fetchEtymology(word) {
     } catch {
         return null;
     }
+}
+
+function parseEtymParagraph(pElem) {
+    const nodes = [];
+    const etylSpans = pElem.querySelectorAll('span.etyl');
+
+    etylSpans.forEach(span => {
+        const lang = span.textContent.trim();
+        // Walk forward from the etyl span to find the word form in an <i class="mention">
+        let sib = span.nextSibling;
+        while (sib) {
+            if (sib.nodeType === 1) {
+                if (sib.tagName === 'I' && sib.classList.contains('mention')) {
+                    // Word may be in a nested <a>
+                    const word = (sib.querySelector('a') || sib).textContent.trim();
+                    if (word) { nodes.push({ lang, word }); break; }
+                } else if (!['SPAN', 'A'].includes(sib.tagName)) {
+                    break;
+                }
+            }
+            sib = sib.nextSibling;
+        }
+    });
+
+    const raw = pElem.textContent.trim().replace(/\[\d+\]/g, '');
+    return { nodes: nodes.reverse(), raw };
 }
 
 async function fetchSynonyms(word) {
@@ -118,19 +145,8 @@ async function fetchSynonyms(word) {
 function render(entries, etymology, synonyms) {
     const entry    = entries[0];
     const phonetic = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
-    const audioUrl = entry.phonetics?.find(p => p.audio)?.audio || '';
 
-    let h = '';
-
-    h += `<div class="word-header">`;
-    if (audioUrl) {
-        h += `<button class="audio-btn" onclick="playAudio(${JSON.stringify(audioUrl)})" aria-label="Listen">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
-                </svg>
-              </button>`;
-    }
-    h += `<span class="word-title">${esc(entry.word)}</span></div>`;
+    let h = `<div class="word-header"><span class="word-title">${esc(entry.word)}</span></div>`;
 
     if (phonetic) h += `<div class="phonetic">${esc(phonetic)}</div>`;
 
@@ -148,8 +164,7 @@ function render(entries, etymology, synonyms) {
         h += `</ul></div>`;
     });
 
-    h += sharedSections(etymology, synonyms);
-
+    h += sharedSections(etymology, synonyms, entry.word);
     resultsEl.innerHTML = h;
     show(resultsEl);
 }
@@ -157,13 +172,8 @@ function render(entries, etymology, synonyms) {
 function renderWiki(wiki, etymology, synonyms) {
     const pageUrl = wiki.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${enc(wiki.title)}`;
 
-    let h = `<div class="word-header">
-                <span class="word-title">${esc(wiki.title)}</span>
-             </div>
+    let h = `<div class="word-header"><span class="word-title">${esc(wiki.title)}</span></div>
              <div class="wiki-source">
-                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;margin-right:4px">
-                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
-                 </svg>
                  Source: Wikipedia
                  <a class="wiki-link" href="${pageUrl}" target="_blank" rel="noopener noreferrer">View on Wikipedia &#8599;</a>
              </div>
@@ -172,19 +182,34 @@ function renderWiki(wiki, etymology, synonyms) {
                  <li><div class="def-text">${esc(wiki.extract)}</div></li>
              </ul>`;
 
-    h += sharedSections(etymology, synonyms);
-
+    h += sharedSections(etymology, synonyms, wiki.title);
     resultsEl.innerHTML = h;
     show(resultsEl);
 }
 
-function sharedSections(etymology, synonyms) {
+function sharedSections(etymology, synonyms, word) {
     let h = '';
 
     if (etymology) {
-        h += `<hr class="rule">
-              <div class="section-label">Origin</div>
-              <div class="etymology-text">${esc(etymology)}</div>`;
+        const { nodes, raw } = etymology;
+        h += `<hr class="rule"><div class="section-label">Origin</div>`;
+
+        if (nodes && nodes.length >= 2) {
+            h += `<div class="etym-tree">`;
+            nodes.forEach((node, i) => {
+                h += `<div class="etym-node">
+                          <span class="etym-lang">${esc(node.lang.toUpperCase())}</span>
+                          <span class="etym-word">${esc(node.word)}</span>
+                      </div>`;
+                if (i < nodes.length - 1) h += `<div class="etym-arrow"></div>`;
+            });
+            // Arrow into the searched word
+            h += `<div class="etym-arrow"></div>
+                  <div class="etym-final">${esc(word)}</div>`;
+            h += `</div>`;
+        } else {
+            h += `<div class="etymology-text">${esc(raw)}</div>`;
+        }
     }
 
     if (synonyms && synonyms.length > 0) {
@@ -206,10 +231,6 @@ function searchWord(word) {
     clearBtn.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     search();
-}
-
-function playAudio(url) {
-    new Audio(url).play().catch(() => {});
 }
 
 function show(el) { el.classList.remove('hidden'); }
