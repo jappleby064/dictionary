@@ -1,0 +1,248 @@
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: arial, sans-serif;
+    background: #f8f9fa;
+    color: #202124;
+    min-height: 100vh;
+}
+
+.container {
+    max-width: 660px;
+    margin: 0 auto;
+    padding: 48px 16px 64px;
+}
+
+.app-title {
+    font-size: 20px;
+    font-weight: 400;
+    color: #202124;
+    margin-bottom: 14px;
+}
+
+/* Search */
+.search-box {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border: 1px solid #dfe1e5;
+    border-radius: 24px;
+    padding: 8px 8px 8px 16px;
+    gap: 4px;
+    box-shadow: 0 1px 6px rgba(32,33,36,.18);
+    transition: box-shadow 0.2s;
+}
+
+.search-box:focus-within {
+    box-shadow: 0 2px 8px rgba(32,33,36,.28);
+    border-color: #dfe1e5;
+}
+
+#search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 16px;
+    color: #202124;
+    background: transparent;
+    min-width: 0;
+}
+
+#search-input::placeholder {
+    color: #9aa0a6;
+}
+
+.clear-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #70757a;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.clear-btn:hover { color: #202124; }
+
+.divider-v {
+    width: 1px;
+    height: 24px;
+    background: #dfe1e5;
+    flex-shrink: 0;
+    margin: 0 4px;
+}
+
+#search-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #4285f4;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+#search-btn:hover { background: #e8f0fe; }
+
+.hidden { display: none !important; }
+
+/* Results card */
+.results {
+    margin-top: 20px;
+    background: #fff;
+    border: 1px solid #dfe1e5;
+    border-radius: 8px;
+    padding: 24px 28px;
+}
+
+/* Word header */
+.word-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 2px;
+}
+
+.audio-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #4285f4;
+    padding: 6px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+}
+
+.audio-btn:hover { background: #e8f0fe; }
+
+.word-title {
+    font-size: 30px;
+    font-weight: 400;
+    color: #202124;
+    line-height: 1.2;
+}
+
+.phonetic {
+    font-size: 15px;
+    color: #70757a;
+    margin-bottom: 20px;
+    padding-left: 2px;
+}
+
+/* Divider */
+.rule {
+    border: none;
+    border-top: 1px solid #ebebeb;
+    margin: 18px 0;
+}
+
+/* Part of speech */
+.pos-block { margin-bottom: 4px; }
+
+.pos-label {
+    font-size: 14px;
+    font-style: italic;
+    color: #70757a;
+    margin-bottom: 10px;
+}
+
+/* Definitions */
+.def-list {
+    list-style: none;
+    padding: 0;
+}
+
+.def-list li {
+    padding: 0 0 10px 14px;
+    border-left: 2px solid #ebebeb;
+    margin-bottom: 4px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.def-list li:last-child { padding-bottom: 0; margin-bottom: 0; }
+
+.def-text { color: #202124; }
+
+.def-example {
+    color: #70757a;
+    margin-top: 3px;
+    font-style: normal;
+}
+
+.def-example::before { content: '\201C'; }
+.def-example::after  { content: '\201D'; }
+
+/* Section labels */
+.section-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #70757a;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 10px;
+}
+
+/* Etymology */
+.etymology-text {
+    font-size: 14px;
+    color: #202124;
+    line-height: 1.6;
+}
+
+/* Synonyms */
+.synonym-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.synonym-chip {
+    display: inline-block;
+    padding: 5px 13px;
+    border-radius: 16px;
+    border: 1px solid #dadce0;
+    font-size: 13px;
+    color: #1a73e8;
+    text-decoration: none;
+    background: none;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    font-family: arial, sans-serif;
+}
+
+.synonym-chip:hover {
+    background: #e8f0fe;
+    border-color: #4285f4;
+}
+
+/* Error / loading */
+.error-msg {
+    margin-top: 20px;
+    padding: 20px;
+    text-align: center;
+    color: #70757a;
+    font-size: 14px;
+    background: #fff;
+    border: 1px solid #dfe1e5;
+    border-radius: 8px;
+}
+
+.loading-msg {
+    padding: 20px 0;
+    text-align: center;
+    color: #70757a;
+    font-size: 14px;
+}
