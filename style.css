@@ -407,3 +407,19 @@ body {
     color: #70757a;
     font-size: 14px;
 }
+
+.etytree-credit {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 11px;
+    color: #bdc1c6;
+}
+
+.etytree-credit a {
+    color: #bdc1c6;
+    text-decoration: none;
+}
+
+.etytree-credit a:hover {
+    text-decoration: underline;
+}

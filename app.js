@@ -182,24 +182,24 @@ function buildEtymTreeFromGraph(wordsObj, edges, searchedWord) {
     const ids = Object.keys(wordsObj);
     if (!ids.length) return null;
 
-    // edges: [ancestor_id, descendant_id]
-    const outEdges = {}, inEdges = {};
-    ids.forEach(id => { outEdges[id] = []; inEdges[id] = []; });
-    edges.forEach(([from, to]) => {
-        if (outEdges[from]) outEdges[from].push(to);
-        if (inEdges[to])   inEdges[to].push(from);
+    // edges: [descendant_id, ancestor_id]  (child → parent direction)
+    const children = {}, parents = {};
+    ids.forEach(id => { children[id] = []; parents[id] = []; });
+    edges.forEach(([child, parent]) => {
+        if (children[parent]) children[parent].push(child);
+        if (parents[child])   parents[child].push(parent);
     });
 
-    // Root = oldest node (no parents)
-    const rootId = ids.find(id => inEdges[id].length === 0);
+    // Root = oldest node (no parents — the PIE/oldest ancestor)
+    const rootId = ids.find(id => parents[id].length === 0);
     if (!rootId) return null;
 
-    // Walk main path from root to leaf following first child at each step
+    // Walk main path from root → leaf following first child at each step
     const path = [rootId];
     const visited = new Set([rootId]);
     let cur = rootId;
-    while (outEdges[cur]?.length && path.length < 20) {
-        const next = outEdges[cur][0];
+    while (children[cur]?.length && path.length < 20) {
+        const next = children[cur][0];
         if (visited.has(next)) break;
         visited.add(next);
         path.push(next);
@@ -210,7 +210,7 @@ function buildEtymTreeFromGraph(wordsObj, edges, searchedWord) {
     const cognates = [];
     if (path.length >= 2) {
         const parentId = path[path.length - 2];
-        (outEdges[parentId] || [])
+        (children[parentId] || [])
             .filter(id => id !== path[path.length - 1])
             .slice(0, 2)
             .forEach(id => {
@@ -226,7 +226,7 @@ function buildEtymTreeFromGraph(wordsObj, edges, searchedWord) {
         return { lang: n?.language_name || '', word: n?.word || '' };
     }).filter(n => n.lang && n.word);
 
-    if (!ancestors.length) return null;
+    if (ancestors.length < 2 && cognates.length === 0) return null;
     return { ancestors, cognates, raw: '' };
 }
 
@@ -341,8 +341,8 @@ function sharedSections(etymology, synonyms, word) {
     let h = '';
 
     if (etymology) {
-        h += `<hr class="rule"><div class="section-label">Origin</div>`;
-        h += renderEtymTree(etymology, word);
+        const etymHtml = renderEtymTree(etymology, word);
+        if (etymHtml) h += `<hr class="rule"><div class="section-label">Origin</div>${etymHtml}`;
     }
 
     if (synonyms?.length) {
@@ -362,11 +362,6 @@ function sharedSections(etymology, synonyms, word) {
 function renderEtymTree(etym, word) {
     if (!etym) return '';
     const { ancestors, cognates, raw } = etym;
-
-    // Require at least 2 ancestors for a tree — single-node results are usually noise
-    if (ancestors.length < 2 && cognates.length === 0) {
-        return raw ? `<div class="etymology-text">${esc(raw)}</div>` : '';
-    }
 
     // Branching: root node → siblings row (last ancestor + cognates) → word
     if (cognates.length > 0 && ancestors.length >= 1) {
