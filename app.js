@@ -31,21 +31,42 @@ async function search() {
         fetchSynonyms(word),
     ]);
 
-    if (!dictData) {
-        hide(resultsEl);
-        errorEl.textContent = `No results found for "${word}".`;
-        show(errorEl);
+    if (dictData) {
+        render(dictData, etymology, synonyms);
         return;
     }
 
-    render(dictData, etymology, synonyms);
+    // Fallback to Wikipedia
+    const wikiData = await fetchWikipedia(word);
+    if (wikiData) {
+        renderWiki(wikiData, etymology, synonyms);
+        return;
+    }
+
+    hide(resultsEl);
+    errorEl.textContent = `No results found for "${word}".`;
+    show(errorEl);
 }
+
+// ── API fetchers ──────────────────────────────────────────────────────────────
 
 async function fetchDictionary(word) {
     try {
         const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${enc(word)}`);
         if (!res.ok) return null;
         return res.json();
+    } catch {
+        return null;
+    }
+}
+
+async function fetchWikipedia(word) {
+    try {
+        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${enc(word)}`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data.type === 'disambiguation') return null;
+        return data;
     } catch {
         return null;
     }
@@ -60,16 +81,20 @@ async function fetchEtymology(word) {
         if (!data.parse) return null;
 
         const doc = new DOMParser().parseFromString(data.parse.text['*'], 'text/html');
-        const heading = doc.querySelector('#Etymology, #Etymology_1');
+        const heading = doc.querySelector('[id^="Etymology"]');
         if (!heading) return null;
 
-        let el = heading.closest('h2, h3, h4');
+        // Wiktionary wraps headings in <div class="mw-heading">; walk up to that
+        // so nextElementSibling reaches the <p> at the same level.
+        const el = heading.closest('.mw-heading') || heading.closest('h2,h3,h4');
         if (!el) return null;
 
         let next = el.nextElementSibling;
         while (next) {
-            if (/^H[234]$/.test(next.tagName)) break;
-            if (next.tagName === 'P') return next.textContent.trim();
+            if (next.classList.contains('mw-heading') || /^H[2-4]$/.test(next.tagName)) break;
+            if (next.tagName === 'P' && next.textContent.trim().length > 10) {
+                return next.textContent.trim().replace(/\[\d+\]/g, '');
+            }
             next = next.nextElementSibling;
         }
         return null;
@@ -88,15 +113,15 @@ async function fetchSynonyms(word) {
     }
 }
 
-function render(entries, etymology, synonyms) {
-    const entry = entries[0];
+// ── Renderers ─────────────────────────────────────────────────────────────────
 
-    const phonetic  = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
-    const audioUrl  = entry.phonetics?.find(p => p.audio)?.audio || '';
+function render(entries, etymology, synonyms) {
+    const entry    = entries[0];
+    const phonetic = entry.phonetic || entry.phonetics?.find(p => p.text)?.text || '';
+    const audioUrl = entry.phonetics?.find(p => p.audio)?.audio || '';
 
     let h = '';
 
-    // Header
     h += `<div class="word-header">`;
     if (audioUrl) {
         h += `<button class="audio-btn" onclick="playAudio(${JSON.stringify(audioUrl)})" aria-label="Listen">
@@ -109,7 +134,6 @@ function render(entries, etymology, synonyms) {
 
     if (phonetic) h += `<div class="phonetic">${esc(phonetic)}</div>`;
 
-    // Meanings
     entry.meanings.forEach((meaning, i) => {
         if (i > 0) h += '<hr class="rule">';
         h += `<div class="pos-block">
@@ -124,27 +148,64 @@ function render(entries, etymology, synonyms) {
         h += `</ul></div>`;
     });
 
-    // Etymology
+    h += sharedSections(etymology, synonyms);
+
+    resultsEl.innerHTML = h;
+    show(resultsEl);
+}
+
+function renderWiki(wiki, etymology, synonyms) {
+    const pageUrl = wiki.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${enc(wiki.title)}`;
+
+    let h = `<div class="word-header">
+                <span class="word-title">${esc(wiki.title)}</span>
+             </div>
+             <div class="wiki-source">
+                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-2px;margin-right:4px">
+                     <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+                 </svg>
+                 Source: Wikipedia
+                 <a class="wiki-link" href="${pageUrl}" target="_blank" rel="noopener noreferrer">View on Wikipedia &#8599;</a>
+             </div>
+             <hr class="rule">
+             <ul class="def-list">
+                 <li><div class="def-text">${esc(wiki.extract)}</div></li>
+             </ul>`;
+
+    h += sharedSections(etymology, synonyms);
+
+    resultsEl.innerHTML = h;
+    show(resultsEl);
+}
+
+function sharedSections(etymology, synonyms) {
+    let h = '';
+
     if (etymology) {
         h += `<hr class="rule">
               <div class="section-label">Origin</div>
               <div class="etymology-text">${esc(etymology)}</div>`;
     }
 
-    // Synonyms
     if (synonyms && synonyms.length > 0) {
         const chips = synonyms.map(s =>
-            `<a class="synonym-chip"
-                href="https://www.oxfordlearnersdictionaries.com/definition/english/${enc(s)}"
-                target="_blank" rel="noopener noreferrer">${esc(s)}</a>`
+            `<button class="synonym-chip" onclick="searchWord(${JSON.stringify(s)})">${esc(s)}</button>`
         ).join('');
         h += `<hr class="rule">
               <div class="section-label">Synonyms</div>
               <div class="synonym-chips">${chips}</div>`;
     }
 
-    resultsEl.innerHTML = h;
-    show(resultsEl);
+    return h;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function searchWord(word) {
+    searchInput.value = word;
+    clearBtn.classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    search();
 }
 
 function playAudio(url) {
