@@ -182,35 +182,63 @@ function buildEtymTreeFromGraph(wordsObj, edges, searchedWord) {
     const ids = Object.keys(wordsObj);
     if (!ids.length) return null;
 
-    // edges: [descendant_id, ancestor_id]  (child → parent direction)
-    const children = {}, parents = {};
-    ids.forEach(id => { children[id] = []; parents[id] = []; });
-    edges.forEach(([child, parent]) => {
-        if (children[parent]) children[parent].push(child);
-        if (parents[child])   parents[child].push(parent);
+    // edges: [ancestor_id, descendant_id]
+    const outEdges = {}, inEdges = {};
+    ids.forEach(id => { outEdges[id] = []; inEdges[id] = []; });
+    edges.forEach(([from, to]) => {
+        if (outEdges[from]) outEdges[from].push(to);
+        if (inEdges[to])    inEdges[to].push(from);
     });
 
-    // Root = oldest node (no parents — the PIE/oldest ancestor)
-    const rootId = ids.find(id => parents[id].length === 0);
+    // Root = oldest node (no ancestors)
+    const rootId = ids.find(id => inEdges[id].length === 0);
     if (!rootId) return null;
 
-    // Walk main path from root → leaf following first child at each step
-    const path = [rootId];
-    const visited = new Set([rootId]);
-    let cur = rootId;
-    while (children[cur]?.length && path.length < 20) {
-        const next = children[cur][0];
-        if (visited.has(next)) break;
-        visited.add(next);
-        path.push(next);
-        cur = next;
+    // Find the node matching the searched word (the target leaf)
+    const key = searchedWord.toLowerCase();
+    const targetId = ids.find(id => wordsObj[id]?.word?.toLowerCase() === key)
+                  || ids.find(id => outEdges[id].length === 0); // fallback: any leaf
+
+    // Walk the longest path from root toward targetId using BFS/DFS
+    // prefer the branch that leads toward targetId where possible
+    function pathTo(start, goal) {
+        const visited = new Set([start]);
+        const stack = [[start, [start]]];
+        let best = null;
+        while (stack.length) {
+            const [cur, p] = stack.pop();
+            if (cur === goal) return p;
+            const nexts = outEdges[cur] || [];
+            // prefer the child that is or leads toward goal
+            for (const nxt of nexts) {
+                if (!visited.has(nxt)) {
+                    visited.add(nxt);
+                    stack.push([nxt, [...p, nxt]]);
+                    if (!best || p.length + 1 > best.length) best = [...p, nxt];
+                }
+            }
+        }
+        return best || [start];
     }
 
-    // Cognates: siblings of the leaf (other children of the leaf's parent)
+    const path = targetId ? pathTo(rootId, targetId) : (() => {
+        // No target found — walk greedily to longest leaf
+        const p = [rootId];
+        const vis = new Set([rootId]);
+        let cur = rootId;
+        while (outEdges[cur]?.length && p.length < 20) {
+            const next = outEdges[cur].find(n => !vis.has(n));
+            if (!next) break;
+            vis.add(next); p.push(next); cur = next;
+        }
+        return p;
+    })();
+
+    // Cognates: siblings of the final node (other children of its parent)
     const cognates = [];
     if (path.length >= 2) {
         const parentId = path[path.length - 2];
-        (children[parentId] || [])
+        (outEdges[parentId] || [])
             .filter(id => id !== path[path.length - 1])
             .slice(0, 2)
             .forEach(id => {
@@ -220,7 +248,7 @@ function buildEtymTreeFromGraph(wordsObj, edges, searchedWord) {
             });
     }
 
-    // Ancestors = every node except the leaf (the searched word itself)
+    // Ancestors = all nodes in path except the final (the searched word's node)
     const ancestors = path.slice(0, -1).map(id => {
         const n = wordsObj[id];
         return { lang: n?.language_name || '', word: n?.word || '' };
