@@ -394,9 +394,7 @@ function renderEtymTree(etym, word) {
     if (!etym) return '';
     const { ancestors, cognates, raw } = etym;
 
-    if (ancestors.length < 2 && cognates.length === 0) {
-        return raw ? `<div class="etymology-text">${esc(raw)}</div>` : '';
-    }
+    if (ancestors.length < 2 && cognates.length === 0) return '';
 
     // Branching: root node → siblings row (last ancestor + cognates) → word
     if (cognates.length > 0 && ancestors.length >= 1) {
