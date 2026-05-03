@@ -33,6 +33,38 @@ body {
 }
 
 /* Search */
+.search-wrapper {
+    position: relative;
+}
+
+.suggestions-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #dfe1e5;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(32,33,36,.18);
+    overflow: hidden;
+    z-index: 100;
+}
+
+.suggestion-item {
+    padding: 10px 16px;
+    font-size: 14px;
+    color: #202124;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid #f1f3f4;
+}
+
+.suggestion-item:last-child { border-bottom: none; }
+.suggestion-item:hover { background: #f8f9fa; }
+.suggestion-item svg { color: #9aa0a6; flex-shrink: 0; }
+
 .search-box {
     display: flex;
     align-items: center;
@@ -259,28 +291,48 @@ body {
     margin-top: 6px;
 }
 
+/* Plain connector line (no arrowhead) — used between root and siblings row */
+.etym-connector {
+    width: 1px;
+    height: 14px;
+    background: #bdc1c6;
+}
+
 /* Branching siblings row */
 .etym-siblings-row {
     display: flex;
-    gap: 20px;
+    gap: 24px;
     justify-content: center;
-    align-items: flex-end;    /* bottom-align so all lines reach the bracket at the same height */
-    padding-bottom: 16px;
+    align-items: stretch;           /* equal height so top/bottom connectors align */
+    padding: 14px 0 16px 0;        /* space above/below for connector lines */
+    border-top: 1px solid #bdc1c6;
     border-bottom: 1px solid #bdc1c6;
     width: fit-content;
     margin: 0 auto;
-    position: relative;
 }
 
 .etym-sib-node {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: flex-start;
     text-align: center;
     position: relative;
 }
 
-/* Vertical line from each sibling down to the bracket border */
+/* Line from top border down to each sibling */
+.etym-sib-node::before {
+    content: '';
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    height: 14px;
+    background: #bdc1c6;
+}
+
+/* Line from each sibling down to the bottom border */
 .etym-sib-node::after {
     content: '';
     position: absolute;

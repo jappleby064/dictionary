@@ -1,32 +1,99 @@
-const searchInput = document.getElementById('search-input');
-const searchBtn   = document.getElementById('search-btn');
-const clearBtn    = document.getElementById('clear-btn');
-const resultsEl   = document.getElementById('results');
-const errorEl     = document.getElementById('error');
+const searchInput  = document.getElementById('search-input');
+const searchBtn    = document.getElementById('search-btn');
+const clearBtn     = document.getElementById('clear-btn');
+const resultsEl    = document.getElementById('results');
+const errorEl      = document.getElementById('error');
+const suggestionsEl = document.getElementById('suggestions');
+
+// Cache word IDs from autocomplete so etymology fetch skips the extra round-trip
+const wordIdCache = {};
+let autocompleteTimer = null;
+
+// ── Search box events ─────────────────────────────────────────────────────────
 
 searchBtn.addEventListener('click', search);
-searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { hideSuggestions(); search(); }
+    if (e.key === 'Escape') hideSuggestions();
+});
 clearBtn.addEventListener('click', () => {
     searchInput.value = '';
     clearBtn.classList.add('hidden');
     searchInput.focus();
+    hideSuggestions();
     hide(resultsEl);
     hide(errorEl);
 });
 searchInput.addEventListener('input', () => {
     clearBtn.classList.toggle('hidden', searchInput.value === '');
+    clearTimeout(autocompleteTimer);
+    const val = searchInput.value.trim();
+    if (val.length < 2) { hideSuggestions(); return; }
+    autocompleteTimer = setTimeout(() => loadSuggestions(val), 280);
 });
 
-// Event delegation for synonym chips — avoids quote-escaping issues in onclick attrs
+// Close suggestions when clicking outside the search wrapper
+document.addEventListener('click', e => {
+    if (!e.target.closest('.search-wrapper')) hideSuggestions();
+});
+
+// Suggestion item clicks
+suggestionsEl.addEventListener('click', e => {
+    const item = e.target.closest('.suggestion-item');
+    if (!item) return;
+    searchInput.value = item.dataset.word;
+    clearBtn.classList.remove('hidden');
+    hideSuggestions();
+    search();
+});
+
+// Synonym chip clicks (event delegation — avoids inline onclick quote issues)
 resultsEl.addEventListener('click', e => {
     const chip = e.target.closest('.synonym-chip');
     if (chip) searchWord(chip.dataset.word);
 });
 
+// ── Autocomplete ──────────────────────────────────────────────────────────────
+
+async function loadSuggestions(prefix) {
+    try {
+        const res  = await fetch(
+            `https://api.etymologyexplorer.com/prod/autocomplete?word=${enc(prefix)}&language=English`
+        );
+        const data = await res.json();
+        const items = data.auto_complete_data || [];
+        items.forEach(item => { wordIdCache[item.word.toLowerCase()] = item._id; });
+        showSuggestions(items.slice(0, 7).map(i => i.word));
+    } catch {
+        hideSuggestions();
+    }
+}
+
+function showSuggestions(words) {
+    if (!words.length) { hideSuggestions(); return; }
+    suggestionsEl.innerHTML = words.map(w =>
+        `<div class="suggestion-item" data-word="${esc(w)}">
+             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                 <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+             </svg>
+             ${esc(w)}
+         </div>`
+    ).join('');
+    suggestionsEl.classList.remove('hidden');
+}
+
+function hideSuggestions() {
+    suggestionsEl.classList.add('hidden');
+    suggestionsEl.innerHTML = '';
+}
+
+// ── Main search ───────────────────────────────────────────────────────────────
+
 async function search() {
     const word = searchInput.value.trim();
     if (!word) return;
 
+    hideSuggestions();
     resultsEl.innerHTML = '<div class="loading-msg">Looking up&hellip;</div>';
     show(resultsEl);
     hide(errorEl);
@@ -59,7 +126,7 @@ async function fetchDictionary(word) {
 
 async function fetchWikipedia(word) {
     try {
-        const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${enc(word)}`);
+        const res  = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${enc(word)}`);
         if (!res.ok) return null;
         const data = await res.json();
         if (data.type === 'disambiguation') return null;
@@ -67,17 +134,112 @@ async function fetchWikipedia(word) {
     } catch { return null; }
 }
 
-// Returns { ancestors: [{lang,word}], cognates: [{lang,word}], raw } or null.
-// Walks DOM text nodes to switch mode at "Cognate with". Ancestors are reversed oldest-first.
+// Tries Etymology Explorer API first, falls back to Wiktionary HTML parsing.
 async function fetchEtymology(word) {
     try {
-        const res = await fetch(
+        const result = await fetchEtymologyExplorer(word);
+        if (result) return result;
+    } catch {}
+    return fetchEtymologyWiktionary(word);
+}
+
+async function fetchEtymologyExplorer(word) {
+    const key = word.toLowerCase();
+
+    // Resolve word ID — use cache if available from autocomplete
+    let wordId = wordIdCache[key];
+    if (!wordId) {
+        const res  = await fetch(
+            `https://api.etymologyexplorer.com/prod/autocomplete?word=${enc(word)}&language=English`
+        );
+        const data = await res.json();
+        const items = data.auto_complete_data || [];
+        items.forEach(i => { wordIdCache[i.word.toLowerCase()] = i._id; });
+        const exact = items.find(i => i.word.toLowerCase() === key);
+        wordId = exact?._id || items[0]?._id;
+    }
+    if (!wordId) return null;
+
+    const treeRes  = await fetch(
+        `https://api.etymologyexplorer.com/prod/get_trees?ids[]=${wordId}`
+    );
+    const treeData = await treeRes.json();
+
+    // Locate words map and edges array robustly (indices 1 and 3 per API spec)
+    let wordsObj = null, edges = null;
+    if (Array.isArray(treeData)) {
+        for (const item of treeData) {
+            if (item?.words && !wordsObj) wordsObj = item.words;
+            if (Array.isArray(item) && Array.isArray(item[0]) && !edges) edges = item;
+        }
+    }
+    if (!wordsObj || !edges?.length) return null;
+
+    return buildEtymTreeFromGraph(wordsObj, edges, word);
+}
+
+function buildEtymTreeFromGraph(wordsObj, edges, searchedWord) {
+    const ids = Object.keys(wordsObj);
+    if (!ids.length) return null;
+
+    // edges: [ancestor_id, descendant_id]
+    const outEdges = {}, inEdges = {};
+    ids.forEach(id => { outEdges[id] = []; inEdges[id] = []; });
+    edges.forEach(([from, to]) => {
+        if (outEdges[from]) outEdges[from].push(to);
+        if (inEdges[to])   inEdges[to].push(from);
+    });
+
+    // Root = oldest node (no parents)
+    const rootId = ids.find(id => inEdges[id].length === 0);
+    if (!rootId) return null;
+
+    // Walk main path from root to leaf following first child at each step
+    const path = [rootId];
+    const visited = new Set([rootId]);
+    let cur = rootId;
+    while (outEdges[cur]?.length && path.length < 20) {
+        const next = outEdges[cur][0];
+        if (visited.has(next)) break;
+        visited.add(next);
+        path.push(next);
+        cur = next;
+    }
+
+    // Cognates: siblings of the leaf (other children of the leaf's parent)
+    const cognates = [];
+    if (path.length >= 2) {
+        const parentId = path[path.length - 2];
+        (outEdges[parentId] || [])
+            .filter(id => id !== path[path.length - 1])
+            .slice(0, 2)
+            .forEach(id => {
+                const n = wordsObj[id];
+                if (n?.language_name && n?.word)
+                    cognates.push({ lang: n.language_name, word: n.word });
+            });
+    }
+
+    // Ancestors = every node except the leaf (the searched word itself)
+    const ancestors = path.slice(0, -1).map(id => {
+        const n = wordsObj[id];
+        return { lang: n?.language_name || '', word: n?.word || '' };
+    }).filter(n => n.lang && n.word);
+
+    if (!ancestors.length) return null;
+    return { ancestors, cognates, raw: '' };
+}
+
+// Wiktionary fallback — parses raw HTML, separates "from" chain from "cognate with"
+async function fetchEtymologyWiktionary(word) {
+    try {
+        const res  = await fetch(
             `https://en.wiktionary.org/w/api.php?action=parse&page=${enc(word)}&prop=text&format=json&origin=*`
         );
         const data = await res.json();
         if (!data.parse) return null;
 
-        const doc = new DOMParser().parseFromString(data.parse.text['*'], 'text/html');
+        const doc     = new DOMParser().parseFromString(data.parse.text['*'], 'text/html');
         const heading = doc.querySelector('[id^="Etymology"]');
         if (!heading) return null;
 
@@ -87,9 +249,8 @@ async function fetchEtymology(word) {
         let next = el.nextElementSibling;
         while (next) {
             if (next.classList.contains('mw-heading') || /^H[2-4]$/.test(next.tagName)) break;
-            if (next.tagName === 'P' && next.textContent.trim().length > 10) {
+            if (next.tagName === 'P' && next.textContent.trim().length > 10)
                 return parseEtymParagraph(next);
-            }
             next = next.nextElementSibling;
         }
         return null;
@@ -97,18 +258,14 @@ async function fetchEtymology(word) {
 }
 
 function parseEtymParagraph(pElem) {
-    const ancestors = [];
-    const cognates  = [];
-    let mode        = 'ancestors';
-    let pendingLang = null;
+    const ancestors = [], cognates = [];
+    let mode = 'ancestors', pendingLang = null;
 
     function walk(node) {
         for (const child of node.childNodes) {
             if (child.nodeType === 3) {
-                // Switch to cognates mode when we see the marker phrase
-                if (/cognate\s+with|compare\s+with|akin\s+to/i.test(child.textContent)) {
+                if (/cognate\s+with|compare\s+with|akin\s+to/i.test(child.textContent))
                     mode = 'cognates';
-                }
             } else if (child.nodeType === 1) {
                 if (child.matches('span.etyl')) {
                     pendingLang = child.textContent.trim();
@@ -118,25 +275,19 @@ function parseEtymParagraph(pElem) {
                         (mode === 'cognates' ? cognates : ancestors).push({ lang: pendingLang, word });
                         pendingLang = null;
                     }
-                } else {
-                    walk(child); // recurse into spans, links, etc.
-                }
+                } else { walk(child); }
             }
         }
     }
-
     walk(pElem);
 
-    return {
-        ancestors: ancestors.reverse(), // oldest first
-        cognates,
-        raw: pElem.textContent.trim().replace(/\[\d+\]/g, ''),
-    };
+    const raw = pElem.textContent.trim().replace(/\[\d+\]/g, '');
+    return { ancestors: ancestors.reverse(), cognates, raw };
 }
 
 async function fetchSynonyms(word) {
     try {
-        const res = await fetch(`https://api.datamuse.com/words?rel_syn=${enc(word)}&max=14`);
+        const res  = await fetch(`https://api.datamuse.com/words?rel_syn=${enc(word)}&max=14`);
         const data = await res.json();
         return data.map(w => w.word);
     } catch { return []; }
@@ -171,10 +322,10 @@ function render(entries, etymology, synonyms) {
 }
 
 function renderWiki(wiki, etymology, synonyms) {
-    const pageUrl = wiki.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${enc(wiki.title)}`;
+    const pageUrl = wiki.content_urls?.desktop?.page
+        || `https://en.wikipedia.org/wiki/${enc(wiki.title)}`;
     let h = `<div class="word-header"><span class="word-title">${esc(wiki.title)}</span></div>
-             <div class="wiki-source">
-                 Source: Wikipedia
+             <div class="wiki-source">Source: Wikipedia
                  <a class="wiki-link" href="${pageUrl}" target="_blank" rel="noopener noreferrer">View on Wikipedia &#8599;</a>
              </div>
              <hr class="rule">
@@ -194,7 +345,7 @@ function sharedSections(etymology, synonyms, word) {
         h += renderEtymTree(etymology, word);
     }
 
-    if (synonyms && synonyms.length > 0) {
+    if (synonyms?.length) {
         const chips = synonyms.map(s =>
             `<button class="synonym-chip" data-word="${esc(s)}">${esc(s)}</button>`
         ).join('');
@@ -206,25 +357,26 @@ function sharedSections(etymology, synonyms, word) {
     return h;
 }
 
-// ── Etymology tree ────────────────────────────────────────────────────────────
+// ── Etymology tree ─────────────────────────────────────────────────────────────
 
 function renderEtymTree(etym, word) {
     if (!etym) return '';
     const { ancestors, cognates, raw } = etym;
 
-    if (ancestors.length === 0 && cognates.length === 0) {
-        return `<div class="etymology-text">${esc(raw)}</div>`;
+    // Require at least 2 ancestors for a tree — single-node results are usually noise
+    if (ancestors.length < 2 && cognates.length === 0) {
+        return raw ? `<div class="etymology-text">${esc(raw)}</div>` : '';
     }
 
-    // Branching: oldest ancestor as root, then most-recent ancestor + cognates as siblings
+    // Branching: root node → siblings row (last ancestor + cognates) → word
     if (cognates.length > 0 && ancestors.length >= 1) {
-        const root    = ancestors[0];                      // oldest (root)
-        const lastAnc = ancestors[ancestors.length - 1];  // direct English ancestor
+        const root    = ancestors[0];
+        const lastAnc = ancestors[ancestors.length - 1];
         const sibs    = [lastAnc, ...cognates.slice(0, 2)];
 
         let h = '<div class="etym-tree">';
         h += etymNodeH(root);
-        h += etymArrowH();
+        h += `<div class="etym-connector"></div>`;
         h += `<div class="etym-siblings-row">`;
         sibs.forEach(n => {
             h += `<div class="etym-sib-node">
@@ -255,10 +407,7 @@ function etymNodeH(n) {
                 <span class="etym-word">${esc(n.word)}</span>
             </div>`;
 }
-
-function etymArrowH() {
-    return `<div class="etym-arrow"></div>`;
-}
+function etymArrowH() { return `<div class="etym-arrow"></div>`; }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
