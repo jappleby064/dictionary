@@ -47,11 +47,11 @@ suggestionsEl.addEventListener('click', e => {
     search();
 });
 
-// Synonym chip clicks (event delegation — avoids inline onclick quote issues)
-resultsEl.addEventListener('click', e => {
+// Chip clicks — covers both synonym chips in results and spelling suggestions in error
+[resultsEl, errorEl].forEach(el => el.addEventListener('click', e => {
     const chip = e.target.closest('.synonym-chip');
     if (chip) searchWord(chip.dataset.word);
-});
+}));
 
 // ── Autocomplete ──────────────────────────────────────────────────────────────
 
@@ -63,7 +63,10 @@ async function loadSuggestions(prefix) {
         const data = await res.json();
         const items = data.auto_complete_data || [];
         items.forEach(item => { wordIdCache[item.word.toLowerCase()] = item._id; });
-        showSuggestions(items.slice(0, 7).map(i => i.word));
+        const clean = items
+            .map(i => i.word)
+            .filter(w => /^[a-zA-Z'-]{2,25}$/.test(w) && !/^\d/.test(w));
+        showSuggestions(clean.slice(0, 7));
     } catch {
         hideSuggestions();
     }
@@ -110,7 +113,15 @@ async function search() {
     if (wikiData) { renderWiki(wikiData, etymology, synonyms); return; }
 
     hide(resultsEl);
-    errorEl.textContent = `No results found for "${word}".`;
+    const suggestions = await fetchSpellingSuggestions(word);
+    if (suggestions.length) {
+        const chips = suggestions.map(s =>
+            `<button class="synonym-chip" data-word="${esc(s)}">${esc(s)}</button>`
+        ).join(' ');
+        errorEl.innerHTML = `No results found for &ldquo;${esc(word)}&rdquo;. Did you mean: ${chips}`;
+    } else {
+        errorEl.textContent = `No results found for "${word}".`;
+    }
     show(errorEl);
 }
 
@@ -321,6 +332,14 @@ async function fetchSynonyms(word) {
         const res  = await fetch(`https://api.datamuse.com/words?rel_syn=${enc(word)}&max=14`);
         const data = await res.json();
         return data.map(w => w.word);
+    } catch { return []; }
+}
+
+async function fetchSpellingSuggestions(word) {
+    try {
+        const res  = await fetch(`https://api.datamuse.com/words?sp=${enc(word)}&max=5`);
+        const data = await res.json();
+        return data.map(w => w.word).filter(w => w.toLowerCase() !== word.toLowerCase());
     } catch { return []; }
 }
 
