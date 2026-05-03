@@ -259,6 +259,39 @@ body {
     margin-top: 6px;
 }
 
+/* Branching siblings row */
+.etym-siblings-row {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    align-items: flex-end;    /* bottom-align so all lines reach the bracket at the same height */
+    padding-bottom: 16px;
+    border-bottom: 1px solid #bdc1c6;
+    width: fit-content;
+    margin: 0 auto;
+    position: relative;
+}
+
+.etym-sib-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    position: relative;
+}
+
+/* Vertical line from each sibling down to the bracket border */
+.etym-sib-node::after {
+    content: '';
+    position: absolute;
+    bottom: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    height: 16px;
+    background: #bdc1c6;
+}
+
 /* Synonyms */
 .synonym-chips {
     display: flex;
