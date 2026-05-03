@@ -24,6 +24,14 @@ body {
     margin-bottom: 14px;
 }
 
+.version {
+    font-size: 12px;
+    color: #9aa0a6;
+    font-weight: 400;
+    vertical-align: middle;
+    margin-left: 4px;
+}
+
 /* Search */
 .search-box {
     display: flex;
