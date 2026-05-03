@@ -255,6 +255,9 @@ function buildEtymTreeFromGraph(wordsObj, edges, searchedWord) {
     }).filter(n => n.lang && n.word);
 
     if (ancestors.length < 2 && cognates.length === 0) return null;
+    // Reject trees where every ancestor is plain Modern English — not a useful etymology
+    const hasHistoricalAncestor = ancestors.some(a => !/^English$/i.test(a.lang));
+    if (!hasHistoricalAncestor && cognates.length === 0) return null;
     return { ancestors, cognates, raw: '' };
 }
 
